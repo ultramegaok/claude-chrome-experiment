@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simplified Checkers</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #eee;
+            margin-bottom: 10px;
+        }
+        .game-info {
+            color: #ccc;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .turn-indicator {
+            font-size: 18px;
+            font-weight: bold;
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .turn-human {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .turn-claude {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(6, 70px);
+            grid-template-rows: repeat(6, 70px);
+            gap: 0;
+            border: 4px solid #4a4a4a;
+            border-radius: 4px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+        }
+        .square {
+            width: 70px;
+            height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+        }
+        .square.light {
+            background: #f0d9b5;
+        }
+        .square.dark {
+            background: #b58863;
+        }
+        .square.selected {
+            background: #7fc97f !important;
+        }
+        .square.valid-move {
+            background: #afd9aa !important;
+        }
+        .square.valid-move::after {
+            content: '';
+            width: 20px;
+            height: 20px;
+            background: rgba(0, 100, 0, 0.4);
+            border-radius: 50%;
+            position: absolute;
+        }
+        .square.last-move {
+            box-shadow: inset 0 0 0 3px #f7dc6f;
+        }
+        .piece {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            border: 3px solid #333;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+        }
+        .piece:hover {
+            transform: scale(1.05);
+        }
+        .piece.human {
+            background: radial-gradient(circle at 30% 30%, #fff, #ddd);
+            border-color: #999;
+        }
+        .piece.claude {
+            background: radial-gradient(circle at 30% 30%, #ff6b6b, #c0392b);
+            border-color: #922b21;
+        }
+        .score-board {
+            display: flex;
+            gap: 40px;
+            margin-top: 20px;
+            color: #eee;
+        }
+        .score {
+            text-align: center;
+        }
+        .score-label {
+            font-size: 14px;
+            color: #aaa;
+        }
+        .score-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .message {
+            margin-top: 15px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .message.info {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+        .message.win {
+            background: #fff3e0;
+            color: #e65100;
+            font-size: 20px;
+        }
+        .reset-btn {
+            margin-top: 20px;
+            padding: 12px 30px;
+            font-size: 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .reset-btn:hover {
+            background: #5a6fd6;
+        }
+    </style>
+</head>
+<body>
+    <h1>Simplified Checkers</h1>
+    <div class="game-info">6x6 board • No kings • Captures are mandatory</div>
+    <div id="turnIndicator" class="turn-indicator turn-human">Your Turn (White)</div>
+    <div id="board" class="board"></div>
+    <div class="score-board">
+        <div class="score">
+            <div class="score-label">Human Captured</div>
+            <div id="humanScore" class="score-value">0</div>
+        </div>
+        <div class="score">
+            <div class="score-label">Claude Captured</div>
+            <div id="claudeScore" class="score-value">0</div>
+        </div>
+    </div>
+    <div id="message" class="message info" style="display: none;"></div>
+    <button class="reset-btn" onclick="resetGame()">Reset Game</button>
+
+    <!-- Hidden state for Claude to read -->
+    <pre id="claudeState" style="background: #111; color: #0f0; padding: 10px; margin-top: 20px; font-size: 11px; max-width: 600px; overflow: auto; border-radius: 4px;"></pre>
+
+    <script>
+        // Game State
+        const gameState = {
+            board: [], // 6x6 array: null = empty, 'human' = white, 'claude' = red
+            currentPlayer: 'human', // 'human' or 'claude'
+            selectedPiece: null, // {row, col}
+            validMoves: [], // [{row, col, isCapture, capturedRow, capturedCol}]
+            humanCaptured: 0,
+            claudeCaptured: 0,
+            lastMove: null, // {fromRow, fromCol, toRow, toCol}
+            gameOver: false,
+            winner: null
+        };
+
+        // Initialize board
+        function initBoard() {
+            gameState.board = [];
+            for (let row = 0; row < 6; row++) {
+                gameState.board[row] = [];
+                for (let col = 0; col < 6; col++) {
+                    // Dark squares only (where row+col is odd)
+                    if ((row + col) % 2 === 1) {
+                        if (row < 2) {
+                            gameState.board[row][col] = 'claude'; // Claude at top
+                        } else if (row > 3) {
+                            gameState.board[row][col] = 'human'; // Human at bottom
+                        } else {
+                            gameState.board[row][col] = null;
+                        }
+                    } else {
+                        gameState.board[row][col] = null;
+                    }
+                }
+            }
+        }
+
+        // Get valid moves for a piece
+        function getValidMoves(row, col) {
+            const piece = gameState.board[row][col];
+            if (!piece) return [];
+
+            const moves = [];
+            const direction = piece === 'human' ? -1 : 1; // Human moves up, Claude moves down
+            const opponent = piece === 'human' ? 'claude' : 'human';
+
+            // Check diagonal moves
+            const diagonals = [
+                {dr: direction, dc: -1},
+                {dr: direction, dc: 1}
+            ];
+
+            for (const {dr, dc} of diagonals) {
+                const newRow = row + dr;
+                const newCol = col + dc;
+
+                if (newRow >= 0 && newRow < 6 && newCol >= 0 && newCol < 6) {
+                    if (gameState.board[newRow][newCol] === null) {
+                        // Regular move
+                        moves.push({row: newRow, col: newCol, isCapture: false});
+                    } else if (gameState.board[newRow][newCol] === opponent) {
+                        // Check for capture
+                        const jumpRow = newRow + dr;
+                        const jumpCol = newCol + dc;
+                        if (jumpRow >= 0 && jumpRow < 6 && jumpCol >= 0 && jumpCol < 6) {
+                            if (gameState.board[jumpRow][jumpCol] === null) {
+                                moves.push({
+                                    row: jumpRow,
+                                    col: jumpCol,
+                                    isCapture: true,
+                                    capturedRow: newRow,
+                                    capturedCol: newCol
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            return moves;
+        }
+
+        // Check if any captures are available for current player
+        function getAvailableCaptures() {
+            const captures = [];
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === gameState.currentPlayer) {
+                        const moves = getValidMoves(row, col);
+                        const captureMoves = moves.filter(m => m.isCapture);
+                        if (captureMoves.length > 0) {
+                            captures.push({row, col, moves: captureMoves});
+                        }
+                    }
+                }
+            }
+            return captures;
+        }
+
+        // Check if player has any legal moves
+        function hasLegalMoves(player) {
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === player) {
+                        if (getValidMoves(row, col).length > 0) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        // Count pieces
+        function countPieces(player) {
+            let count = 0;
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === player) count++;
+                }
+            }
+            return count;
+        }
+
+        // Check for win
+        function checkWin() {
+            const humanPieces = countPieces('human');
+            const claudePieces = countPieces('claude');
+
+            if (claudePieces === 0) {
+                gameState.gameOver = true;
+                gameState.winner = 'human';
+                return true;
+            }
+            if (humanPieces === 0) {
+                gameState.gameOver = true;
+                gameState.winner = 'claude';
+                return true;
+            }
+            if (!hasLegalMoves(gameState.currentPlayer)) {
+                gameState.gameOver = true;
+                gameState.winner = gameState.currentPlayer === 'human' ? 'claude' : 'human';
+                return true;
+            }
+            return false;
+        }
+
+        // Handle square click
+        function handleClick(row, col) {
+            if (gameState.gameOver) return;
+
+            const clickedPiece = gameState.board[row][col];
+            const availableCaptures = getAvailableCaptures();
+            const mustCapture = availableCaptures.length > 0;
+
+            // If clicking on own piece, select it
+            if (clickedPiece === gameState.currentPlayer) {
+                // If must capture, only allow selecting pieces that can capture
+                if (mustCapture) {
+                    const canCapture = availableCaptures.some(c => c.row === row && c.col === col);
+                    if (!canCapture) {
+                        showMessage('You must capture! Select a piece that can capture.', 'info');
+                        return;
+                    }
+                }
+
+                gameState.selectedPiece = {row, col};
+                let moves = getValidMoves(row, col);
+
+                // If must capture, filter to only capture moves
+                if (mustCapture) {
+                    moves = moves.filter(m => m.isCapture);
+                }
+
+                gameState.validMoves = moves;
+                renderBoard();
+                return;
+            }
+
+            // If clicking on valid move destination
+            if (gameState.selectedPiece) {
+                const move = gameState.validMoves.find(m => m.row === row && m.col === col);
+                if (move) {
+                    executeMove(gameState.selectedPiece.row, gameState.selectedPiece.col, move);
+                    return;
+                }
+            }
+
+            // Clear selection
+            gameState.selectedPiece = null;
+            gameState.validMoves = [];
+            renderBoard();
+        }
+
+        // Execute a move
+        function executeMove(fromRow, fromCol, move) {
+            const piece = gameState.board[fromRow][fromCol];
+
+            // Move piece
+            gameState.board[fromRow][fromCol] = null;
+            gameState.board[move.row][move.col] = piece;
+
+            // Handle capture
+            if (move.isCapture) {
+                gameState.board[move.capturedRow][move.capturedCol] = null;
+                if (piece === 'human') {
+                    gameState.humanCaptured++;
+                } else {
+                    gameState.claudeCaptured++;
+                }
+            }
+
+            // Record last move
+            gameState.lastMove = {
+                fromRow, fromCol,
+                toRow: move.row,
+                toCol: move.col
+            };
+
+            // Clear selection
+            gameState.selectedPiece = null;
+            gameState.validMoves = [];
+
+            // Check for win
+            if (checkWin()) {
+                renderBoard();
+                const winnerName = gameState.winner === 'human' ? 'You win!' : 'Claude wins!';
+                showMessage(winnerName, 'win');
+                return;
+            }
+
+            // Switch turns
+            gameState.currentPlayer = gameState.currentPlayer === 'human' ? 'claude' : 'human';
+            hideMessage();
+            renderBoard();
+        }
+
+        // Render the board
+        function renderBoard() {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    const square = document.createElement('div');
+                    square.className = 'square';
+                    square.dataset.row = row;
+                    square.dataset.col = col;
+
+                    // Light or dark square
+                    if ((row + col) % 2 === 0) {
+                        square.classList.add('light');
+                    } else {
+                        square.classList.add('dark');
+                    }
+
+                    // Highlight selected piece
+                    if (gameState.selectedPiece &&
+                        gameState.selectedPiece.row === row &&
+                        gameState.selectedPiece.col === col) {
+                        square.classList.add('selected');
+                    }
+
+                    // Highlight valid moves
+                    if (gameState.validMoves.some(m => m.row === row && m.col === col)) {
+                        square.classList.add('valid-move');
+                    }
+
+                    // Highlight last move
+                    if (gameState.lastMove &&
+                        ((gameState.lastMove.fromRow === row && gameState.lastMove.fromCol === col) ||
+                         (gameState.lastMove.toRow === row && gameState.lastMove.toCol === col))) {
+                        square.classList.add('last-move');
+                    }
+
+                    // Add piece
+                    const piece = gameState.board[row][col];
+                    if (piece) {
+                        const pieceEl = document.createElement('div');
+                        pieceEl.className = `piece ${piece}`;
+                        square.appendChild(pieceEl);
+                    }
+
+                    square.addEventListener('click', () => handleClick(row, col));
+                    boardEl.appendChild(square);
+                }
+            }
+
+            // Update turn indicator
+            const turnEl = document.getElementById('turnIndicator');
+            if (gameState.gameOver) {
+                turnEl.textContent = gameState.winner === 'human' ? 'You Won!' : 'Claude Won!';
+                turnEl.className = 'turn-indicator ' + (gameState.winner === 'human' ? 'turn-human' : 'turn-claude');
+            } else {
+                turnEl.textContent = gameState.currentPlayer === 'human' ? 'Your Turn (White)' : "Claude's Turn (Red)";
+                turnEl.className = 'turn-indicator ' + (gameState.currentPlayer === 'human' ? 'turn-human' : 'turn-claude');
+            }
+
+            // Update scores
+            document.getElementById('humanScore').textContent = gameState.humanCaptured;
+            document.getElementById('claudeScore').textContent = gameState.claudeCaptured;
+
+            // Update Claude state display
+            updateClaudeState();
+        }
+
+        // Update the state display for Claude to read
+        function updateClaudeState() {
+            const availableCaptures = getAvailableCaptures();
+            const mustCapture = availableCaptures.length > 0;
+
+            // Build board string representation
+            let boardStr = 'BOARD:\\n';
+            for (let row = 0; row < 6; row++) {
+                let rowStr = row + ':';
+                for (let col = 0; col < 6; col++) {
+                    const cell = gameState.board[row][col];
+                    if (cell === 'claude') rowStr += 'C';
+                    else if (cell === 'human') rowStr += 'H';
+                    else if ((row + col) % 2 === 1) rowStr += '.';
+                    else rowStr += ' ';
+                }
+                boardStr += rowStr + '\\n';
+            }
+
+            // Get legal moves
+            const legalMoves = [];
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === gameState.currentPlayer) {
+                        let pieceMoves = getValidMoves(row, col);
+                        if (mustCapture) {
+                            pieceMoves = pieceMoves.filter(m => m.isCapture);
+                        }
+                        for (const m of pieceMoves) {
+                            legalMoves.push(`${row},${col}->${m.row},${m.col}${m.isCapture ? '(cap)' : ''}`);
+                        }
+                    }
+                }
+            }
+
+            const stateStr = `TURN:${gameState.currentPlayer}
+GAMEOVER:${gameState.gameOver}
+WINNER:${gameState.winner || 'none'}
+MUSTCAPTURE:${mustCapture}
+${boardStr}MOVES:${legalMoves.join('|')}`;
+
+            document.getElementById('claudeState').textContent = stateStr;
+        }
+
+        // Show message
+        function showMessage(text, type) {
+            const msgEl = document.getElementById('message');
+            msgEl.textContent = text;
+            msgEl.className = 'message ' + type;
+            msgEl.style.display = 'block';
+        }
+
+        // Hide message
+        function hideMessage() {
+            document.getElementById('message').style.display = 'none';
+        }
+
+        // Reset game
+        function resetGame() {
+            gameState.currentPlayer = 'human';
+            gameState.selectedPiece = null;
+            gameState.validMoves = [];
+            gameState.humanCaptured = 0;
+            gameState.claudeCaptured = 0;
+            gameState.lastMove = null;
+            gameState.gameOver = false;
+            gameState.winner = null;
+            initBoard();
+            hideMessage();
+            renderBoard();
+        }
+
+        // Expose game state for Claude to read
+        function getGameState() {
+            return JSON.stringify(gameState);
+        }
+
+        // Expose function to get all legal moves for current player
+        function getAllLegalMoves() {
+            const moves = [];
+            const availableCaptures = getAvailableCaptures();
+            const mustCapture = availableCaptures.length > 0;
+
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === gameState.currentPlayer) {
+                        let pieceMoves = getValidMoves(row, col);
+                        if (mustCapture) {
+                            pieceMoves = pieceMoves.filter(m => m.isCapture);
+                        }
+                        if (pieceMoves.length > 0) {
+                            moves.push({
+                                from: {row, col},
+                                moves: pieceMoves
+                            });
+                        }
+                    }
+                }
+            }
+            return JSON.stringify({mustCapture, moves});
+        }
+
+        // Expose function for Claude to make a move
+        function makeMove(fromRow, fromCol, toRow, toCol) {
+            if (gameState.board[fromRow][fromCol] !== gameState.currentPlayer) {
+                return JSON.stringify({success: false, error: 'Not your piece'});
+            }
+
+            const moves = getValidMoves(fromRow, fromCol);
+            const availableCaptures = getAvailableCaptures();
+            const mustCapture = availableCaptures.length > 0;
+
+            let validMoves = moves;
+            if (mustCapture) {
+                validMoves = moves.filter(m => m.isCapture);
+            }
+
+            const move = validMoves.find(m => m.row === toRow && m.col === toCol);
+            if (!move) {
+                return JSON.stringify({success: false, error: 'Invalid move'});
+            }
+
+            executeMove(fromRow, fromCol, move);
+            return JSON.stringify({success: true, gameState: gameState});
+        }
+
+        // Claude AI - automatically plays when it's Claude's turn
+        function claudeAI() {
+            if (gameState.currentPlayer !== 'claude' || gameState.gameOver) return;
+
+            const availableCaptures = getAvailableCaptures();
+            const mustCapture = availableCaptures.length > 0;
+
+            // Gather all legal moves
+            const allMoves = [];
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === 'claude') {
+                        let pieceMoves = getValidMoves(row, col);
+                        if (mustCapture) {
+                            pieceMoves = pieceMoves.filter(m => m.isCapture);
+                        }
+                        for (const m of pieceMoves) {
+                            allMoves.push({fromRow: row, fromCol: col, move: m});
+                        }
+                    }
+                }
+            }
+
+            if (allMoves.length === 0) return;
+
+            // Simple strategy:
+            // 1. Always capture if possible (mandatory anyway)
+            // 2. Prefer moves that advance pieces further down the board
+            // 3. Add some randomness for variety
+
+            let bestMoves = allMoves;
+
+            // If captures available, those are the only options
+            const captures = allMoves.filter(m => m.move.isCapture);
+            if (captures.length > 0) {
+                bestMoves = captures;
+            } else {
+                // Prefer advancing (higher row number = further advanced for Claude)
+                const maxRow = Math.max(...allMoves.map(m => m.move.row));
+                bestMoves = allMoves.filter(m => m.move.row === maxRow);
+            }
+
+            // Pick randomly among best moves
+            const chosen = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+
+            // Execute the move with a small delay for visual effect
+            setTimeout(() => {
+                // Simulate clicking the piece
+                handleClick(chosen.fromRow, chosen.fromCol);
+
+                setTimeout(() => {
+                    // Simulate clicking the destination
+                    handleClick(chosen.move.row, chosen.move.col);
+                }, 300);
+            }, 500);
+        }
+
+        // Watch for turn changes and trigger AI
+        const originalRenderBoard = renderBoard;
+        renderBoard = function() {
+            originalRenderBoard();
+            // Trigger Claude AI after a short delay when it's Claude's turn
+            if (gameState.currentPlayer === 'claude' && !gameState.gameOver) {
+                setTimeout(claudeAI, 800);
+            }
+        };
+
+        // Initialize
+        initBoard();
+        renderBoard();
+    </script>
+</body>
+</html>

@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Checkers</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #eee;
+            margin-bottom: 5px;
+        }
+        .subtitle {
+            color: #a855f7;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .game-info {
+            color: #ccc;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 13px;
+        }
+        .turn-indicator {
+            font-size: 18px;
+            font-weight: bold;
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .turn-human {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .turn-claude {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(6, 70px);
+            grid-template-rows: repeat(6, 70px);
+            gap: 0;
+            border: 4px solid #4a4a4a;
+            border-radius: 4px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+        }
+        .square {
+            width: 70px;
+            height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+        }
+        .square.light {
+            background: #f0d9b5;
+        }
+        .square.dark {
+            background: #b58863;
+        }
+        .square.portal-blue {
+            background: radial-gradient(circle, #3b82f6 0%, #1e40af 70%, #1e3a8a 100%) !important;
+            box-shadow: inset 0 0 20px #60a5fa, 0 0 10px #3b82f6;
+            animation: pulse-blue 2s infinite;
+        }
+        .square.portal-orange {
+            background: radial-gradient(circle, #f97316 0%, #c2410c 70%, #9a3412 100%) !important;
+            box-shadow: inset 0 0 20px #fb923c, 0 0 10px #f97316;
+            animation: pulse-orange 2s infinite;
+        }
+        @keyframes pulse-blue {
+            0%, 100% { box-shadow: inset 0 0 20px #60a5fa, 0 0 10px #3b82f6; }
+            50% { box-shadow: inset 0 0 30px #93c5fd, 0 0 20px #60a5fa; }
+        }
+        @keyframes pulse-orange {
+            0%, 100% { box-shadow: inset 0 0 20px #fb923c, 0 0 10px #f97316; }
+            50% { box-shadow: inset 0 0 30px #fdba74, 0 0 20px #fb923c; }
+        }
+        .square.selected {
+            background: #7fc97f !important;
+        }
+        .square.valid-move {
+            background: #afd9aa !important;
+        }
+        .square.valid-move.portal-blue,
+        .square.valid-move.portal-orange {
+            box-shadow: inset 0 0 20px #22c55e, 0 0 15px #22c55e !important;
+        }
+        .square.valid-move::after {
+            content: '';
+            width: 20px;
+            height: 20px;
+            background: rgba(0, 100, 0, 0.5);
+            border-radius: 50%;
+            position: absolute;
+        }
+        .square.last-move {
+            box-shadow: inset 0 0 0 3px #f7dc6f;
+        }
+        .square .portal-label {
+            position: absolute;
+            bottom: 2px;
+            right: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 3px black;
+        }
+        .piece {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            border: 3px solid #333;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+            z-index: 1;
+        }
+        .piece:hover {
+            transform: scale(1.05);
+        }
+        .piece.human {
+            background: radial-gradient(circle at 30% 30%, #fff, #ddd);
+            border-color: #999;
+        }
+        .piece.claude {
+            background: radial-gradient(circle at 30% 30%, #ff6b6b, #c0392b);
+            border-color: #922b21;
+        }
+        .piece.teleported {
+            animation: teleport 0.5s ease-out;
+        }
+        @keyframes teleport {
+            0% { transform: scale(0) rotate(180deg); opacity: 0; }
+            100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
+        .score-board {
+            display: flex;
+            gap: 40px;
+            margin-top: 20px;
+            color: #eee;
+        }
+        .score {
+            text-align: center;
+        }
+        .score-label {
+            font-size: 14px;
+            color: #aaa;
+        }
+        .score-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .message {
+            margin-top: 15px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        .message.info {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+        .message.win {
+            background: #fff3e0;
+            color: #e65100;
+            font-size: 20px;
+        }
+        .message.portal {
+            background: #f3e8ff;
+            color: #7c3aed;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .btn {
+            padding: 12px 24px;
+            font-size: 14px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background: #5a6fd6;
+        }
+        .btn.secondary {
+            background: #4b5563;
+        }
+        .btn.secondary:hover {
+            background: #374151;
+        }
+        .audit-log {
+            background: #111;
+            color: #0f0;
+            padding: 15px;
+            margin-top: 20px;
+            font-size: 11px;
+            font-family: monospace;
+            max-width: 600px;
+            max-height: 200px;
+            overflow-y: auto;
+            border-radius: 4px;
+            width: 100%;
+        }
+        .audit-log .move-human {
+            color: #60a5fa;
+        }
+        .audit-log .move-claude {
+            color: #f87171;
+        }
+        .audit-log .portal-event {
+            color: #a855f7;
+        }
+        .audit-log .capture-event {
+            color: #fbbf24;
+        }
+        .audit-log .game-event {
+            color: #22c55e;
+        }
+        #claudeState {
+            background: #111;
+            color: #0f0;
+            padding: 10px;
+            margin-top: 10px;
+            font-size: 11px;
+            max-width: 600px;
+            overflow: auto;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>Portal Checkers</h1>
+    <div class="subtitle">Step on a portal, emerge from its twin!</div>
+    <div class="game-info">6x6 board • 2 portal pairs (blue & orange) • Captures mandatory</div>
+    <div id="turnIndicator" class="turn-indicator turn-human">Your Turn (White)</div>
+    <div id="board" class="board"></div>
+    <div class="score-board">
+        <div class="score">
+            <div class="score-label">Human Captured</div>
+            <div id="humanScore" class="score-value">0</div>
+        </div>
+        <div class="score">
+            <div class="score-label">Claude Captured</div>
+            <div id="claudeScore" class="score-value">0</div>
+        </div>
+    </div>
+    <div id="message" class="message info" style="display: none;"></div>
+    <div class="controls">
+        <button class="btn" onclick="resetGame()">Reset Game</button>
+        <button class="btn secondary" onclick="toggleAI()">AI: <span id="aiStatus">ON</span></button>
+    </div>
+    <div class="audit-log" id="auditLog">
+        <div class="game-event">Game initialized. Human (White) moves first.</div>
+    </div>
+    <pre id="claudeState"></pre>
+
+    <script>
+        // Portal positions - pairs of linked portals
+        const PORTALS = {
+            blue: [
+                {row: 1, col: 3},  // Blue portal 1
+                {row: 4, col: 0}   // Blue portal 2
+            ],
+            orange: [
+                {row: 1, col: 0},  // Orange portal 1
+                {row: 4, col: 5}   // Orange portal 2
+            ]
+        };
+
+        // Game State
+        const gameState = {
+            board: [],
+            currentPlayer: 'human',
+            selectedPiece: null,
+            validMoves: [],
+            humanCaptured: 0,
+            claudeCaptured: 0,
+            lastMove: null,
+            gameOver: false,
+            winner: null,
+            moveNumber: 0,
+            auditLog: []
+        };
+
+        let aiEnabled = true;
+
+        // Check if a position is a portal
+        function getPortalAt(row, col) {
+            for (const [color, positions] of Object.entries(PORTALS)) {
+                for (let i = 0; i < positions.length; i++) {
+                    if (positions[i].row === row && positions[i].col === col) {
+                        return {color, index: i, partner: positions[1 - i]};
+                    }
+                }
+            }
+            return null;
+        }
+
+        // Add to audit log
+        function logEvent(message, className = '') {
+            gameState.auditLog.push({message, className, time: new Date().toISOString()});
+            const logEl = document.getElementById('auditLog');
+            const entry = document.createElement('div');
+            entry.className = className;
+            entry.textContent = `[${gameState.moveNumber}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // Initialize board
+        function initBoard() {
+            gameState.board = [];
+            for (let row = 0; row < 6; row++) {
+                gameState.board[row] = [];
+                for (let col = 0; col < 6; col++) {
+                    if ((row + col) % 2 === 1) {
+                        // Check if this is a portal square - no pieces on portals initially
+                        const portal = getPortalAt(row, col);
+                        if (portal) {
+                            gameState.board[row][col] = null;
+                        } else if (row < 2) {
+                            gameState.board[row][col] = 'claude';
+                        } else if (row > 3) {
+                            gameState.board[row][col] = 'human';
+                        } else {
+                            gameState.board[row][col] = null;
+                        }
+                    } else {
+                        gameState.board[row][col] = null;
+                    }
+                }
+            }
+        }
+
+        // Get valid moves for a piece (including portal teleportation)
+        function getValidMoves(row, col) {
+            const piece = gameState.board[row][col];
+            if (!piece) return [];
+
+            const moves = [];
+            const direction = piece === 'human' ? -1 : 1;
+            const opponent = piece === 'human' ? 'claude' : 'human';
+
+            const diagonals = [
+                {dr: direction, dc: -1},
+                {dr: direction, dc: 1}
+            ];
+
+            for (const {dr, dc} of diagonals) {
+                const newRow = row + dr;
+                const newCol = col + dc;
+
+                if (newRow >= 0 && newRow < 6 && newCol >= 0 && newCol < 6) {
+                    if (gameState.board[newRow][newCol] === null) {
+                        // Check if landing on a portal
+                        const portal = getPortalAt(newRow, newCol);
+                        if (portal) {
+                            // Can move to portal, will teleport to partner
+                            moves.push({
+                                row: newRow,
+                                col: newCol,
+                                isCapture: false,
+                                isPortal: true,
+                                portalColor: portal.color,
+                                teleportTo: portal.partner
+                            });
+                        } else {
+                            moves.push({row: newRow, col: newCol, isCapture: false});
+                        }
+                    } else if (gameState.board[newRow][newCol] === opponent) {
+                        const jumpRow = newRow + dr;
+                        const jumpCol = newCol + dc;
+                        if (jumpRow >= 0 && jumpRow < 6 && jumpCol >= 0 && jumpCol < 6) {
+                            if (gameState.board[jumpRow][jumpCol] === null) {
+                                const portal = getPortalAt(jumpRow, jumpCol);
+                                if (portal) {
+                                    moves.push({
+                                        row: jumpRow,
+                                        col: jumpCol,
+                                        isCapture: true,
+                                        capturedRow: newRow,
+                                        capturedCol: newCol,
+                                        isPortal: true,
+                                        portalColor: portal.color,
+                                        teleportTo: portal.partner
+                                    });
+                                } else {
+                                    moves.push({
+                                        row: jumpRow,
+                                        col: jumpCol,
+                                        isCapture: true,
+                                        capturedRow: newRow,
+                                        capturedCol: newCol
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return moves;
+        }
+
+        function getAvailableCaptures() {
+            const captures = [];
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === gameState.currentPlayer) {
+                        const moves = getValidMoves(row, col);
+                        const captureMoves = moves.filter(m => m.isCapture);
+                        if (captureMoves.length > 0) {
+                            captures.push({row, col, moves: captureMoves});
+                        }
+                    }
+                }
+            }
+            return captures;
+        }
+
+        function hasLegalMoves(player) {
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === player) {
+                        if (getValidMoves(row, col).length > 0) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function countPieces(player) {
+            let count = 0;
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === player) count++;
+                }
+            }
+            return count;
+        }
+
+        function checkWin() {
+            const humanPieces = countPieces('human');
+            const claudePieces = countPieces('claude');
+
+            if (claudePieces === 0) {
+                gameState.gameOver = true;
+                gameState.winner = 'human';
+                return true;
+            }
+            if (humanPieces === 0) {
+                gameState.gameOver = true;
+                gameState.winner = 'claude';
+                return true;
+            }
+            if (!hasLegalMoves(gameState.currentPlayer)) {
+                gameState.gameOver = true;
+                gameState.winner = gameState.currentPlayer === 'human' ? 'claude' : 'human';
+                return true;
+            }
+            return false;
+        }
+
+        function handleClick(row, col) {
+            if (gameState.gameOver) return;
+
+            const clickedPiece = gameState.board[row][col];
+            const availableCaptures = getAvailableCaptures();
+            const mustCapture = availableCaptures.length > 0;
+
+            if (clickedPiece === gameState.currentPlayer) {
+                if (mustCapture) {
+                    const canCapture = availableCaptures.some(c => c.row === row && c.col === col);
+                    if (!canCapture) {
+                        showMessage('You must capture! Select a piece that can capture.', 'info');
+                        return;
+                    }
+                }
+
+                gameState.selectedPiece = {row, col};
+                let moves = getValidMoves(row, col);
+
+                if (mustCapture) {
+                    moves = moves.filter(m => m.isCapture);
+                }
+
+                gameState.validMoves = moves;
+                renderBoard();
+                return;
+            }
+
+            if (gameState.selectedPiece) {
+                const move = gameState.validMoves.find(m => m.row === row && m.col === col);
+                if (move) {
+                    executeMove(gameState.selectedPiece.row, gameState.selectedPiece.col, move);
+                    return;
+                }
+            }
+
+            gameState.selectedPiece = null;
+            gameState.validMoves = [];
+            renderBoard();
+        }
+
+        function executeMove(fromRow, fromCol, move) {
+            const piece = gameState.board[fromRow][fromCol];
+            const player = piece === 'human' ? 'Human' : 'Claude';
+            gameState.moveNumber++;
+
+            // Move piece
+            gameState.board[fromRow][fromCol] = null;
+
+            let finalRow = move.row;
+            let finalCol = move.col;
+            let portalUsed = false;
+
+            // Check for portal teleportation
+            if (move.isPortal && move.teleportTo) {
+                // Check if destination portal is empty
+                if (gameState.board[move.teleportTo.row][move.teleportTo.col] === null) {
+                    finalRow = move.teleportTo.row;
+                    finalCol = move.teleportTo.col;
+                    portalUsed = true;
+                    logEvent(`${player} enters ${move.portalColor} portal at (${move.row},${move.col}) → emerges at (${finalRow},${finalCol})!`, 'portal-event');
+                } else {
+                    // Portal exit blocked, stay on portal entrance
+                    logEvent(`${player} enters ${move.portalColor} portal but exit is blocked! Stays at (${move.row},${move.col})`, 'portal-event');
+                }
+            }
+
+            gameState.board[finalRow][finalCol] = piece;
+
+            // Handle capture
+            if (move.isCapture) {
+                gameState.board[move.capturedRow][move.capturedCol] = null;
+                if (piece === 'human') {
+                    gameState.humanCaptured++;
+                } else {
+                    gameState.claudeCaptured++;
+                }
+                logEvent(`${player} captures at (${move.capturedRow},${move.capturedCol})!`, 'capture-event');
+            }
+
+            // Log the move
+            const moveDesc = `${player}: (${fromRow},${fromCol}) → (${finalRow},${finalCol})${move.isCapture ? ' [CAPTURE]' : ''}${portalUsed ? ' [PORTAL]' : ''}`;
+            logEvent(moveDesc, piece === 'human' ? 'move-human' : 'move-claude');
+
+            gameState.lastMove = {
+                fromRow, fromCol,
+                toRow: finalRow,
+                toCol: finalCol
+            };
+
+            gameState.selectedPiece = null;
+            gameState.validMoves = [];
+
+            // Check if piece reached back row (remove it since no kings)
+            if (piece === 'human' && finalRow === 0) {
+                gameState.board[finalRow][finalCol] = null;
+                logEvent(`Human piece reached row 0 and is removed (no kings rule)`, 'game-event');
+            } else if (piece === 'claude' && finalRow === 5) {
+                gameState.board[finalRow][finalCol] = null;
+                logEvent(`Claude piece reached row 5 and is removed (no kings rule)`, 'game-event');
+            }
+
+            if (checkWin()) {
+                renderBoard();
+                const winnerName = gameState.winner === 'human' ? 'Human wins!' : 'Claude wins!';
+                showMessage(winnerName, 'win');
+                logEvent(`GAME OVER: ${winnerName} (Human captured: ${gameState.humanCaptured}, Claude captured: ${gameState.claudeCaptured})`, 'game-event');
+                return;
+            }
+
+            // Switch turns
+            gameState.currentPlayer = gameState.currentPlayer === 'human' ? 'claude' : 'human';
+
+            // Check if next player has any moves (stalemate = loss)
+            if (!hasLegalMoves(gameState.currentPlayer)) {
+                gameState.gameOver = true;
+                gameState.winner = gameState.currentPlayer === 'human' ? 'claude' : 'human';
+                renderBoard();
+                const winnerName = gameState.winner === 'human' ? 'Human wins!' : 'Claude wins!';
+                showMessage(`${winnerName} (opponent has no moves)`, 'win');
+                logEvent(`GAME OVER: ${winnerName} - opponent has no legal moves! (Human captured: ${gameState.humanCaptured}, Claude captured: ${gameState.claudeCaptured})`, 'game-event');
+                return;
+            }
+
+            hideMessage();
+            renderBoard();
+        }
+
+        function renderBoard() {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    const square = document.createElement('div');
+                    square.className = 'square';
+                    square.dataset.row = row;
+                    square.dataset.col = col;
+
+                    if ((row + col) % 2 === 0) {
+                        square.classList.add('light');
+                    } else {
+                        square.classList.add('dark');
+                    }
+
+                    // Check for portal
+                    const portal = getPortalAt(row, col);
+                    if (portal) {
+                        square.classList.add(`portal-${portal.color}`);
+                        const label = document.createElement('span');
+                        label.className = 'portal-label';
+                        label.textContent = portal.color === 'blue' ? 'B' : 'O';
+                        square.appendChild(label);
+                    }
+
+                    if (gameState.selectedPiece &&
+                        gameState.selectedPiece.row === row &&
+                        gameState.selectedPiece.col === col) {
+                        square.classList.add('selected');
+                    }
+
+                    if (gameState.validMoves.some(m => m.row === row && m.col === col)) {
+                        square.classList.add('valid-move');
+                    }
+
+                    if (gameState.lastMove &&
+                        ((gameState.lastMove.fromRow === row && gameState.lastMove.fromCol === col) ||
+                         (gameState.lastMove.toRow === row && gameState.lastMove.toCol === col))) {
+                        square.classList.add('last-move');
+                    }
+
+                    const piece = gameState.board[row][col];
+                    if (piece) {
+                        const pieceEl = document.createElement('div');
+                        pieceEl.className = `piece ${piece}`;
+                        square.appendChild(pieceEl);
+                    }
+
+                    square.addEventListener('click', () => handleClick(row, col));
+                    boardEl.appendChild(square);
+                }
+            }
+
+            const turnEl = document.getElementById('turnIndicator');
+            if (gameState.gameOver) {
+                turnEl.textContent = gameState.winner === 'human' ? 'Human Won!' : 'Claude Won!';
+                turnEl.className = 'turn-indicator ' + (gameState.winner === 'human' ? 'turn-human' : 'turn-claude');
+            } else {
+                turnEl.textContent = gameState.currentPlayer === 'human' ? 'Human Turn (White)' : "Claude's Turn (Red)";
+                turnEl.className = 'turn-indicator ' + (gameState.currentPlayer === 'human' ? 'turn-human' : 'turn-claude');
+            }
+
+            document.getElementById('humanScore').textContent = gameState.humanCaptured;
+            document.getElementById('claudeScore').textContent = gameState.claudeCaptured;
+
+            updateClaudeState();
+        }
+
+        function updateClaudeState() {
+            const availableCaptures = getAvailableCaptures();
+            const mustCapture = availableCaptures.length > 0;
+
+            let boardStr = 'BOARD:\n';
+            for (let row = 0; row < 6; row++) {
+                let rowStr = row + ':';
+                for (let col = 0; col < 6; col++) {
+                    const cell = gameState.board[row][col];
+                    const portal = getPortalAt(row, col);
+                    if (cell === 'claude') rowStr += 'C';
+                    else if (cell === 'human') rowStr += 'H';
+                    else if (portal) rowStr += (portal.color === 'blue' ? 'B' : 'O');
+                    else if ((row + col) % 2 === 1) rowStr += '.';
+                    else rowStr += ' ';
+                }
+                boardStr += rowStr + '\n';
+            }
+
+            const legalMoves = [];
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === gameState.currentPlayer) {
+                        let pieceMoves = getValidMoves(row, col);
+                        if (mustCapture) {
+                            pieceMoves = pieceMoves.filter(m => m.isCapture);
+                        }
+                        for (const m of pieceMoves) {
+                            let moveStr = `${row},${col}->${m.row},${m.col}`;
+                            if (m.isCapture) moveStr += '(cap)';
+                            if (m.isPortal) moveStr += `(portal->${m.teleportTo.row},${m.teleportTo.col})`;
+                            legalMoves.push(moveStr);
+                        }
+                    }
+                }
+            }
+
+            const stateStr = `TURN:${gameState.currentPlayer}
+MOVE#:${gameState.moveNumber}
+GAMEOVER:${gameState.gameOver}
+WINNER:${gameState.winner || 'none'}
+MUSTCAPTURE:${mustCapture}
+SCORE:human=${gameState.humanCaptured},claude=${gameState.claudeCaptured}
+${boardStr}MOVES:${legalMoves.join('|')}`;
+
+            document.getElementById('claudeState').textContent = stateStr;
+        }
+
+        function showMessage(text, type) {
+            const msgEl = document.getElementById('message');
+            msgEl.textContent = text;
+            msgEl.className = 'message ' + type;
+            msgEl.style.display = 'block';
+        }
+
+        function hideMessage() {
+            document.getElementById('message').style.display = 'none';
+        }
+
+        function toggleAI() {
+            aiEnabled = !aiEnabled;
+            document.getElementById('aiStatus').textContent = aiEnabled ? 'ON' : 'OFF';
+        }
+
+        function resetGame() {
+            gameState.currentPlayer = 'human';
+            gameState.selectedPiece = null;
+            gameState.validMoves = [];
+            gameState.humanCaptured = 0;
+            gameState.claudeCaptured = 0;
+            gameState.lastMove = null;
+            gameState.gameOver = false;
+            gameState.winner = null;
+            gameState.moveNumber = 0;
+            gameState.auditLog = [];
+            document.getElementById('auditLog').innerHTML = '';
+            initBoard();
+            hideMessage();
+            logEvent('Game reset. Human (White) moves first.', 'game-event');
+            renderBoard();
+        }
+
+        // Claude AI with portal awareness
+        function claudeAI() {
+            if (!aiEnabled || gameState.currentPlayer !== 'claude' || gameState.gameOver) return;
+
+            const availableCaptures = getAvailableCaptures();
+            const mustCapture = availableCaptures.length > 0;
+
+            const allMoves = [];
+            for (let row = 0; row < 6; row++) {
+                for (let col = 0; col < 6; col++) {
+                    if (gameState.board[row][col] === 'claude') {
+                        let pieceMoves = getValidMoves(row, col);
+                        if (mustCapture) {
+                            pieceMoves = pieceMoves.filter(m => m.isCapture);
+                        }
+                        for (const m of pieceMoves) {
+                            allMoves.push({fromRow: row, fromCol: col, move: m});
+                        }
+                    }
+                }
+            }
+
+            if (allMoves.length === 0) return;
+
+            // Strategy with portal awareness:
+            // 1. Captures first (mandatory)
+            // 2. Portal moves that advance position
+            // 3. Regular advancing moves
+
+            let bestMoves = allMoves;
+
+            const captures = allMoves.filter(m => m.move.isCapture);
+            if (captures.length > 0) {
+                bestMoves = captures;
+            } else {
+                // Score moves: portal moves that teleport forward get bonus
+                const scoredMoves = allMoves.map(m => {
+                    let score = m.move.row; // Base score is how far down the board
+                    if (m.move.isPortal && m.move.teleportTo) {
+                        // If portal teleports us forward (higher row), big bonus
+                        if (m.move.teleportTo.row > m.move.row) {
+                            score = m.move.teleportTo.row + 2;
+                        } else {
+                            score = m.move.teleportTo.row;
+                        }
+                    }
+                    return {...m, score};
+                });
+
+                const maxScore = Math.max(...scoredMoves.map(m => m.score));
+                bestMoves = scoredMoves.filter(m => m.score === maxScore);
+            }
+
+            const chosen = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+
+            setTimeout(() => {
+                handleClick(chosen.fromRow, chosen.fromCol);
+                setTimeout(() => {
+                    handleClick(chosen.move.row, chosen.move.col);
+                }, 300);
+            }, 500);
+        }
+
+        const originalRenderBoard = renderBoard;
+        renderBoard = function() {
+            originalRenderBoard();
+            if (gameState.currentPlayer === 'claude' && !gameState.gameOver) {
+                setTimeout(claudeAI, 800);
+            }
+        };
+
+        // Initialize
+        initBoard();
+        logEvent('Game initialized. Human (White) moves first.', 'game-event');
+        renderBoard();
+    </script>
+</body>
+</html>
