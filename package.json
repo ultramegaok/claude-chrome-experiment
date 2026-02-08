@@ -1,0 +1,13 @@
+{
+  "name": "decay-roguelike",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node test-runner.js --suite all",
+    "test:compare": "node test-runner.js --compare 50",
+    "test:perf": "node test-runner.js --perf 20"
+  },
+  "dependencies": {
+    "puppeteer": "^24.0.0"
+  }
+}
